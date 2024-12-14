@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Iguana Tracker</title>
+</head>
+<body>
+    <h1>Green Iguana Tracker</h1>
+    <video id="webcam" autoplay playsinline width="640" height="480"></video>
+    <p>Ground Count: <span id="groundCount">0</span></p>
+    <p>Tree Count: <span id="treeCount">0</span></p>
+    <p>Ground Confidence: <span id="groundConfidence">0.00</span></p>
+    <p>Tree Confidence: <span id="treeConfidence">0.00</span></p>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+
+    <script>
+        let treeCount = 0;
+        let groundCount = 0;
+        let treeTimer = 0; // 记录 treeConfidence 持续大于 0.7 的时间
+        let groundTimer = 0; // 记录 groundConfidence 持续大于 0.7 的时间
+
+        const CONFIDENCE_THRESHOLD = 0.85; // 置信度阈值
+        const TIME_THRESHOLD = 2000; // 持续时间阈值（毫秒）
+
+        async function init() {
+            // 加载 Teachable Machine 模型
+            const modelURL = "https://teachablemachine.withgoogle.com/models/Kb7-vUBnq/model.json";
+            const model = await tf.loadLayersModel(modelURL);
+            console.log("Model loaded:", model);
+
+            // 启用摄像头
+            const webcam = document.getElementById("webcam");
+            navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+                webcam.srcObject = stream;
+            });
+
+            predict(model, webcam);
+        }
+
+        async function predict(model, webcam) {
+            while (true) {
+                try {
+                    // 抓取影像并处理大小
+                    const imageTensor = tf.browser.fromPixels(webcam)
+                        .resizeNearestNeighbor([224, 224]) // 替换为模型所需的输入大小
+                        .expandDims(0)
+                        .toFloat()
+                        .div(tf.scalar(255));
+
+                    // 模型预测
+                    const predictions = await model.predict(imageTensor).array();
+
+                    const groundConfidence = predictions[0][0].toFixed(2); // Ground 的置信度
+                    const treeConfidence = predictions[0][1].toFixed(2); // Tree 的置信度
+
+                    // 更新置信度显示
+                    document.getElementById("groundConfidence").innerText = groundConfidence;
+                    document.getElementById("treeConfidence").innerText = treeConfidence;
+
+                    // 检查 Tree 的置信度是否持续大于阈值
+                    if (treeConfidence > CONFIDENCE_THRESHOLD) {
+                        treeTimer += 1000; // 每次循环增加1秒（1000毫秒）
+                        if (treeTimer >= TIME_THRESHOLD) {
+                            treeCount++;
+                            treeTimer = 0; // 重置计时器
+                        }
+                    } else {
+                        treeTimer = 0; // 如果置信度小于阈值，重置计时器
+                    }
+
+                    // 检查 Ground 的置信度是否持续大于阈值
+                    if (groundConfidence > CONFIDENCE_THRESHOLD) {
+                        groundTimer += 1000; // 每次循环增加1秒（1000毫秒）
+                        if (groundTimer >= TIME_THRESHOLD) {
+                            groundCount++;
+                            groundTimer = 0; // 重置计时器
+                        }
+                    } else {
+                        groundTimer = 0; // 如果置信度小于阈值，重置计时器
+                    }
+
+                    // 更新计数显示
+                    document.getElementById("groundCount").innerText = groundCount;
+                    document.getElementById("treeCount").innerText = treeCount;
+                } catch (e) {
+                    console.error(e);
+                }
+
+                await new Promise((r) => setTimeout(r, 1000)); // 每秒更新一次
+            }
+        }
+
+        // 初始化
+        init();
+    </script>
+</body>
+</html>
